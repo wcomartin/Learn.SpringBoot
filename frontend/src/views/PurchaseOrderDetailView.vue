@@ -2,11 +2,13 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/auth'
+import { useToast } from '@/composables/useToast'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import Skeleton from '@/components/ui/Skeleton.vue'
 
 const route = useRoute()
 const router = useRouter()
+const { success } = useToast()
 const order = ref<any>(null)
 const loading = ref(true)
 
@@ -15,6 +17,16 @@ async function fetchData() {
   if (res.ok) order.value = await res.json()
   else router.push('/purchasing')
   loading.value = false
+}
+
+async function updateStatus(status: string) {
+  const res = await api(`/api/purchasing/orders/${route.params.id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
+  if (res.ok) { order.value = await res.json(); success(`PO ${status.toLowerCase()}`) }
+}
+
+async function deleteOrder() {
+  const res = await api(`/api/purchasing/orders/${route.params.id}`, { method: 'DELETE' })
+  if (res.ok) { success('PO deleted'); router.push('/purchasing') }
 }
 
 onMounted(fetchData)

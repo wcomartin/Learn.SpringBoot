@@ -3,6 +3,7 @@ package com.learn.springboot.config
 import com.learn.springboot.auth.*
 import com.learn.springboot.customer.company.*
 import com.learn.springboot.customer.contact.*
+import com.learn.springboot.customer.note.*
 import com.learn.springboot.inventory.product.*
 import com.learn.springboot.inventory.stock.*
 import com.learn.springboot.inventory.warehouse.*
@@ -18,6 +19,7 @@ import org.springframework.security.crypto.password.PasswordEncoder
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
+import kotlin.random.Random
 
 @Configuration
 class DataSeeder {
@@ -28,6 +30,7 @@ class DataSeeder {
         userRepo: UserRepository,
         companyRepo: CompanyRepository,
         contactRepo: ContactRepository,
+        noteRepo: NoteRepository,
         productRepo: ProductRepository,
         warehouseRepo: WarehouseRepository,
         supplierRepo: SupplierRepository,
@@ -40,116 +43,214 @@ class DataSeeder {
     ) = CommandLineRunner {
         if (!shouldSeed && userRepo.count() > 0) return@CommandLineRunner
 
+        val rng = Random(42) // deterministic for reproducibility
+
         // Users
         userRepo.save(User(email = "admin@example.com", password = passwordEncoder.encode("password"), name = "Admin", role = Role.ADMIN))
         userRepo.save(User(email = "user@example.com", password = passwordEncoder.encode("password"), name = "Staff User", role = Role.USER))
 
         // Companies
-        val acme = companyRepo.save(Company(name = "Acme Corp", email = "info@acme.com", phone = "555-0100", status = CompanyStatus.ACTIVE))
-        val globex = companyRepo.save(Company(name = "Globex Inc", email = "hello@globex.com", website = "https://globex.com", status = CompanyStatus.ACTIVE))
-        companyRepo.save(Company(name = "Initech", email = "sales@initech.com", status = CompanyStatus.LEAD))
+        val companyNames = listOf(
+            "Acme Corp", "Globex Inc", "Initech", "Umbrella Industries", "Stark Supplies",
+            "Wayne Enterprises", "Cyberdyne Systems", "Soylent Corp", "Massive Dynamic",
+            "Oscorp Industries", "LexCorp", "Aperture Science", "Black Mesa Research",
+            "Tyrell Corporation", "Weyland-Yutani", "Abstergo Industries", "Vault-Tec",
+            "Mann Co", "Hyperion Corp", "Atlas Solutions"
+        )
+        val companies = companyNames.mapIndexed { i, name ->
+            companyRepo.save(Company(
+                name = name,
+                email = "${name.lowercase().replace(" ", "").take(10)}@example.com",
+                phone = "555-${String.format("%04d", i * 111)}",
+                website = if (rng.nextBoolean()) "https://${name.lowercase().replace(" ", "")}.com" else null,
+                status = listOf(CompanyStatus.ACTIVE, CompanyStatus.ACTIVE, CompanyStatus.ACTIVE, CompanyStatus.LEAD, CompanyStatus.INACTIVE)[rng.nextInt(5)]
+            ))
+        }
 
         // Contacts
-        val john = contactRepo.save(Contact(firstName = "John", lastName = "Smith", email = "john@acme.com", jobTitle = "VP Purchasing", company = acme))
-        contactRepo.save(Contact(firstName = "Jane", lastName = "Doe", email = "jane@acme.com", jobTitle = "Buyer", company = acme))
-        contactRepo.save(Contact(firstName = "Bob", lastName = "Wilson", email = "bob@globex.com", jobTitle = "Operations Manager", company = globex))
+        val firstNames = listOf("John", "Jane", "Bob", "Alice", "Mike", "Sarah", "Tom", "Lisa", "Dave", "Emma", "Chris", "Rachel", "James", "Maria", "Kevin", "Laura", "Steve", "Nicole", "Brian", "Amy", "Dan", "Kate", "Paul", "Megan", "Eric", "Julie", "Mark", "Anna", "Scott", "Diana")
+        val lastNames = listOf("Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Wilson", "Anderson", "Taylor", "Thomas", "Moore", "Jackson", "Martin", "Lee", "Thompson", "White")
+        val titles = listOf("VP Purchasing", "Buyer", "Operations Manager", "CEO", "CFO", "Warehouse Manager", "Procurement Lead", "Supply Chain Director", "Logistics Coordinator", "Account Manager")
 
-        acme.primaryContact = john
-        companyRepo.save(acme)
+        val contacts = (0 until 50).map { i ->
+            val company = companies[rng.nextInt(companies.size)]
+            contactRepo.save(Contact(
+                firstName = firstNames[rng.nextInt(firstNames.size)],
+                lastName = lastNames[rng.nextInt(lastNames.size)],
+                email = "${firstNames[i % firstNames.size].lowercase()}.${lastNames[i % lastNames.size].lowercase()}@example.com",
+                phone = "555-${String.format("%04d", rng.nextInt(10000))}",
+                jobTitle = titles[rng.nextInt(titles.size)],
+                company = company
+            ))
+        }
+
+        // Set primary contacts
+        companies.forEach { company ->
+            val companyContacts = contacts.filter { it.company?.id == company.id }
+            if (companyContacts.isNotEmpty()) {
+                company.primaryContact = companyContacts.first()
+                companyRepo.save(company)
+            }
+        }
+
+        // Notes
+        val noteKinds = NoteKind.entries
+        val noteBodies = listOf(
+            "Discussed pricing for Q2 order", "Follow up on delivery schedule",
+            "Sent updated catalog", "Confirmed payment terms", "Reviewed contract renewal",
+            "Left voicemail about outstanding invoice", "Met at trade show, interested in bulk order",
+            "Requested samples of new product line", "Negotiated 10% volume discount",
+            "Scheduled site visit for next week", "Resolved shipping complaint",
+            "Introduced to new procurement team member", "Discussed return policy",
+            "Sent quote for 500 units", "Called about delayed shipment"
+        )
+        contacts.take(20).forEach { contact ->
+            (0 until rng.nextInt(1, 5)).forEach { _ ->
+                noteRepo.save(Note(
+                    body = noteBodies[rng.nextInt(noteBodies.size)],
+                    kind = noteKinds[rng.nextInt(noteKinds.size)],
+                    contact = contact
+                ))
+            }
+        }
 
         // Warehouses
-        val mainWh = warehouseRepo.save(Warehouse(name = "Main Warehouse", address = "100 Industrial Blvd", city = "Toronto", province = "ON", postalCode = "M5V 1A1"))
-        val eastWh = warehouseRepo.save(Warehouse(name = "East Distribution", address = "50 Logistics Way", city = "Montreal", province = "QC", postalCode = "H2X 1Y4"))
+        val warehouses = listOf(
+            warehouseRepo.save(Warehouse(name = "Main Warehouse", address = "100 Industrial Blvd", city = "Toronto", province = "ON", postalCode = "M5V 1A1")),
+            warehouseRepo.save(Warehouse(name = "East Distribution", address = "50 Logistics Way", city = "Montreal", province = "QC", postalCode = "H2X 1Y4")),
+            warehouseRepo.save(Warehouse(name = "West Fulfillment", address = "200 Pacific Dr", city = "Vancouver", province = "BC", postalCode = "V6B 2P1"))
+        )
 
         // Products
-        val widget = productRepo.save(Product(sku = "WDG-001", name = "Standard Widget", unitPrice = BigDecimal("29.99"), costPrice = BigDecimal("12.50"), reorderPoint = 50))
-        val premium = productRepo.save(Product(sku = "WDG-002", name = "Premium Widget", unitPrice = BigDecimal("49.99"), costPrice = BigDecimal("22.00"), reorderPoint = 25))
-        val gadget = productRepo.save(Product(sku = "GDG-001", name = "Gadget Pro", unitPrice = BigDecimal("99.99"), costPrice = BigDecimal("45.00"), reorderPoint = 10))
-        val sprocket = productRepo.save(Product(sku = "SPR-001", name = "Sprocket A", unitPrice = BigDecimal("5.99"), costPrice = BigDecimal("2.10"), reorderPoint = 200))
+        val productData = listOf(
+            Triple("WDG-001", "Standard Widget", Pair("29.99", "12.50")),
+            Triple("WDG-002", "Premium Widget", Pair("49.99", "22.00")),
+            Triple("WDG-003", "Mini Widget", Pair("14.99", "6.25")),
+            Triple("GDG-001", "Gadget Pro", Pair("99.99", "45.00")),
+            Triple("GDG-002", "Gadget Lite", Pair("59.99", "28.00")),
+            Triple("GDG-003", "Gadget Max", Pair("149.99", "67.50")),
+            Triple("SPR-001", "Sprocket A", Pair("5.99", "2.10")),
+            Triple("SPR-002", "Sprocket B", Pair("7.99", "3.20")),
+            Triple("SPR-003", "Sprocket C (Heavy Duty)", Pair("12.99", "5.50")),
+            Triple("BLT-001", "Bolt Pack (100)", Pair("19.99", "8.00")),
+            Triple("BLT-002", "Bolt Pack (500)", Pair("79.99", "32.00")),
+            Triple("GKT-001", "Gasket Set", Pair("34.99", "15.00")),
+            Triple("GKT-002", "Premium Gasket Set", Pair("54.99", "24.00")),
+            Triple("BRG-001", "Ball Bearing 10mm", Pair("8.99", "3.50")),
+            Triple("BRG-002", "Ball Bearing 20mm", Pair("12.99", "5.00")),
+            Triple("MTR-001", "Servo Motor Small", Pair("89.99", "40.00")),
+            Triple("MTR-002", "Servo Motor Large", Pair("199.99", "90.00")),
+            Triple("SEN-001", "Temperature Sensor", Pair("24.99", "10.00")),
+            Triple("SEN-002", "Pressure Sensor", Pair("44.99", "18.00")),
+            Triple("CBL-001", "Cable Assembly 1m", Pair("15.99", "6.50"))
+        )
+        val products = productData.map { (sku, name, prices) ->
+            productRepo.save(Product(
+                sku = sku, name = name,
+                unitPrice = BigDecimal(prices.first), costPrice = BigDecimal(prices.second),
+                reorderPoint = rng.nextInt(10, 100),
+                status = if (rng.nextInt(10) < 8) ProductStatus.ACTIVE else ProductStatus.DISCONTINUED
+            ))
+        }
 
         // Stock levels
-        stockRepo.save(StockLevel(product = widget, warehouse = mainWh, quantity = 120))
-        stockRepo.save(StockLevel(product = widget, warehouse = eastWh, quantity = 45))
-        stockRepo.save(StockLevel(product = premium, warehouse = mainWh, quantity = 30))
-        stockRepo.save(StockLevel(product = gadget, warehouse = mainWh, quantity = 8))  // below reorder point
-        stockRepo.save(StockLevel(product = sprocket, warehouse = mainWh, quantity = 150))  // below reorder point
-        stockRepo.save(StockLevel(product = sprocket, warehouse = eastWh, quantity = 80))  // below reorder point
+        products.filter { it.status == ProductStatus.ACTIVE }.forEach { product ->
+            warehouses.forEach { warehouse ->
+                if (rng.nextBoolean() || warehouse == warehouses[0]) {
+                    stockRepo.save(StockLevel(
+                        product = product, warehouse = warehouse,
+                        quantity = rng.nextInt(0, 300)
+                    ))
+                }
+            }
+        }
 
         // Suppliers
-        val widgetSupply = supplierRepo.save(Supplier(name = "Widget Supply Co", contactName = "Mike Chen", email = "mike@widgetsupply.com", leadTimeDays = 14))
-        val partsDirect = supplierRepo.save(Supplier(name = "Parts Direct", contactName = "Sarah Lee", email = "sarah@partsdirect.com", leadTimeDays = 7))
+        val suppliers = listOf(
+            supplierRepo.save(Supplier(name = "Widget Supply Co", contactName = "Mike Chen", email = "mike@widgetsupply.com", leadTimeDays = 14)),
+            supplierRepo.save(Supplier(name = "Parts Direct", contactName = "Sarah Lee", email = "sarah@partsdirect.com", leadTimeDays = 7)),
+            supplierRepo.save(Supplier(name = "Industrial Components Ltd", contactName = "Tom Park", email = "tom@industrialcomp.com", leadTimeDays = 21)),
+            supplierRepo.save(Supplier(name = "FastParts Express", contactName = "Lisa Wong", email = "lisa@fastparts.com", leadTimeDays = 3)),
+            supplierRepo.save(Supplier(name = "Global Manufacturing", contactName = "James Rivera", email = "james@globalmfg.com", leadTimeDays = 30))
+        )
 
         // Carriers
-        val fedex = carrierRepo.save(Carrier(name = "FedEx", trackingUrlTemplate = "https://www.fedex.com/fedextrack/?trknbr={tracking_number}"))
-        val ups = carrierRepo.save(Carrier(name = "UPS", trackingUrlTemplate = "https://www.ups.com/track?tracknum={tracking_number}"))
-        carrierRepo.save(Carrier(name = "Canada Post", trackingUrlTemplate = "https://www.canadapost-postescanada.ca/track-reperer/en#/search?searchFor={tracking_number}"))
+        val carriers = listOf(
+            carrierRepo.save(Carrier(name = "FedEx", trackingUrlTemplate = "https://www.fedex.com/fedextrack/?trknbr={tracking_number}")),
+            carrierRepo.save(Carrier(name = "UPS", trackingUrlTemplate = "https://www.ups.com/track?tracknum={tracking_number}")),
+            carrierRepo.save(Carrier(name = "Canada Post", trackingUrlTemplate = "https://www.canadapost-postescanada.ca/track-reperer/en#/search?searchFor={tracking_number}")),
+            carrierRepo.save(Carrier(name = "DHL", trackingUrlTemplate = "https://www.dhl.com/en/express/tracking.html?AWB={tracking_number}"))
+        )
 
-        // --- Sales Orders ---
+        // Sales Orders (25 orders in various states)
+        val soStatuses = SalesOrderStatus.entries
+        val salesOrders = (1..25).map { i ->
+            val status = soStatuses[rng.nextInt(soStatuses.size)]
+            val daysAgo = rng.nextInt(1, 60)
+            val order = SalesOrder(
+                orderNumber = "SO-${1000 + i}",
+                customerId = companies[rng.nextInt(companies.size)].id,
+                status = status,
+                orderDate = LocalDate.now().minusDays(daysAgo.toLong()),
+                dueDate = if (rng.nextBoolean()) LocalDate.now().plusDays(rng.nextInt(1, 14).toLong()) else null
+            )
+            val lineCount = rng.nextInt(1, 5)
+            val usedProducts = products.shuffled(rng).take(lineCount)
+            usedProducts.forEach { p ->
+                order.lineItems.add(SalesOrderLine(
+                    order = order, productId = p.id, productSku = p.sku, productName = p.name,
+                    quantity = rng.nextInt(1, 100), unitPrice = p.unitPrice
+                ))
+            }
+            salesOrderRepo.save(order)
+        }
 
-        // SO-1: Delivered
-        val so1 = SalesOrder(orderNumber = "SO-1001", customerId = acme.id, status = SalesOrderStatus.DELIVERED, orderDate = LocalDate.now().minusDays(14))
-        so1.lineItems.add(SalesOrderLine(order = so1, productId = widget.id, productSku = widget.sku, productName = widget.name, quantity = 50, unitPrice = widget.unitPrice))
-        so1.lineItems.add(SalesOrderLine(order = so1, productId = premium.id, productSku = premium.sku, productName = premium.name, quantity = 10, unitPrice = premium.unitPrice))
-        salesOrderRepo.save(so1)
+        // Purchase Orders (15 orders)
+        val poStatuses = PurchaseOrderStatus.entries
+        (1..15).forEach { i ->
+            val status = poStatuses[rng.nextInt(poStatuses.size)]
+            val daysAgo = rng.nextInt(1, 45)
+            val po = PurchaseOrder(
+                poNumber = "PO-${2000 + i}",
+                supplier = suppliers[rng.nextInt(suppliers.size)],
+                status = status,
+                orderDate = LocalDate.now().minusDays(daysAgo.toLong()),
+                expectedDelivery = LocalDate.now().plusDays(rng.nextInt(-5, 20).toLong()),
+                warehouseId = warehouses[rng.nextInt(warehouses.size)].id
+            )
+            val lineCount = rng.nextInt(1, 4)
+            products.shuffled(rng).take(lineCount).forEach { p ->
+                val qty = rng.nextInt(10, 200)
+                po.lineItems.add(PurchaseOrderLine(
+                    order = po, productId = p.id, productSku = p.sku, productName = p.name,
+                    quantity = qty,
+                    receivedQuantity = if (status == PurchaseOrderStatus.RECEIVED) qty else if (status == PurchaseOrderStatus.ACKNOWLEDGED) rng.nextInt(0, qty) else 0,
+                    unitCost = p.costPrice
+                ))
+            }
+            purchaseOrderRepo.save(po)
+        }
 
-        // SO-2: Shipped
-        val so2 = SalesOrder(orderNumber = "SO-1002", customerId = globex.id, status = SalesOrderStatus.SHIPPED, orderDate = LocalDate.now().minusDays(5))
-        so2.lineItems.add(SalesOrderLine(order = so2, productId = gadget.id, productSku = gadget.sku, productName = gadget.name, quantity = 5, unitPrice = gadget.unitPrice))
-        salesOrderRepo.save(so2)
+        // Shipments (20 shipments)
+        val shStatuses = ShipmentStatus.entries
+        val shippableOrders = salesOrders.filter { it.status != SalesOrderStatus.DRAFT && it.status != SalesOrderStatus.CANCELLED }
+        (1..20).map { i ->
+            val status = shStatuses[rng.nextInt(shStatuses.size)]
+            val carrier = if (rng.nextInt(10) < 8) carriers[rng.nextInt(carriers.size)] else null
+            val trackingNumber = if (carrier != null && status != ShipmentStatus.PENDING) "TRK${rng.nextLong(1000000000, 9999999999)}" else null
+            shipmentRepo.save(Shipment(
+                shipmentNumber = "SHP-${3000 + i}",
+                salesOrderId = if (shippableOrders.isNotEmpty()) shippableOrders[rng.nextInt(shippableOrders.size)].id else salesOrders[0].id,
+                warehouseId = warehouses[rng.nextInt(warehouses.size)].id,
+                carrier = carrier,
+                trackingNumber = trackingNumber,
+                status = status,
+                shippedAt = if (status.ordinal >= ShipmentStatus.SHIPPED.ordinal) Instant.now().minusSeconds(rng.nextLong(86400, 864000)) else null,
+                deliveredAt = if (status == ShipmentStatus.DELIVERED) Instant.now().minusSeconds(rng.nextLong(3600, 172800)) else null,
+                estimatedDelivery = if (status != ShipmentStatus.DELIVERED) LocalDate.now().plusDays(rng.nextInt(1, 10).toLong()) else null
+            ))
+        }
 
-        // SO-3: Confirmed, awaiting shipment
-        val so3 = SalesOrder(orderNumber = "SO-1003", customerId = acme.id, status = SalesOrderStatus.CONFIRMED, orderDate = LocalDate.now().minusDays(2), dueDate = LocalDate.now().plusDays(5))
-        so3.lineItems.add(SalesOrderLine(order = so3, productId = widget.id, productSku = widget.sku, productName = widget.name, quantity = 100, unitPrice = widget.unitPrice))
-        so3.lineItems.add(SalesOrderLine(order = so3, productId = sprocket.id, productSku = sprocket.sku, productName = sprocket.name, quantity = 500, unitPrice = sprocket.unitPrice))
-        salesOrderRepo.save(so3)
-
-        // SO-4: Draft
-        val so4 = SalesOrder(orderNumber = "SO-1004", customerId = globex.id, status = SalesOrderStatus.DRAFT, orderDate = LocalDate.now())
-        so4.lineItems.add(SalesOrderLine(order = so4, productId = premium.id, productSku = premium.sku, productName = premium.name, quantity = 20, unitPrice = premium.unitPrice))
-        salesOrderRepo.save(so4)
-
-        // SO-5: Cancelled
-        val so5 = SalesOrder(orderNumber = "SO-1005", customerId = acme.id, status = SalesOrderStatus.CANCELLED, orderDate = LocalDate.now().minusDays(10))
-        so5.lineItems.add(SalesOrderLine(order = so5, productId = gadget.id, productSku = gadget.sku, productName = gadget.name, quantity = 2, unitPrice = gadget.unitPrice))
-        salesOrderRepo.save(so5)
-
-        // --- Purchase Orders ---
-
-        // PO-1: Received
-        val po1 = PurchaseOrder(poNumber = "PO-2001", supplier = widgetSupply, status = PurchaseOrderStatus.RECEIVED, orderDate = LocalDate.now().minusDays(21), expectedDelivery = LocalDate.now().minusDays(7), warehouseId = mainWh.id)
-        po1.lineItems.add(PurchaseOrderLine(order = po1, productId = widget.id, productSku = widget.sku, productName = widget.name, quantity = 200, receivedQuantity = 200, unitCost = widget.costPrice))
-        purchaseOrderRepo.save(po1)
-
-        // PO-2: Acknowledged, in transit
-        val po2 = PurchaseOrder(poNumber = "PO-2002", supplier = partsDirect, status = PurchaseOrderStatus.ACKNOWLEDGED, orderDate = LocalDate.now().minusDays(5), expectedDelivery = LocalDate.now().plusDays(2), warehouseId = mainWh.id)
-        po2.lineItems.add(PurchaseOrderLine(order = po2, productId = sprocket.id, productSku = sprocket.sku, productName = sprocket.name, quantity = 500, receivedQuantity = 0, unitCost = sprocket.costPrice))
-        po2.lineItems.add(PurchaseOrderLine(order = po2, productId = gadget.id, productSku = gadget.sku, productName = gadget.name, quantity = 20, receivedQuantity = 0, unitCost = gadget.costPrice))
-        purchaseOrderRepo.save(po2)
-
-        // PO-3: Submitted
-        val po3 = PurchaseOrder(poNumber = "PO-2003", supplier = widgetSupply, status = PurchaseOrderStatus.SUBMITTED, orderDate = LocalDate.now().minusDays(1), expectedDelivery = LocalDate.now().plusDays(13), warehouseId = eastWh.id)
-        po3.lineItems.add(PurchaseOrderLine(order = po3, productId = premium.id, productSku = premium.sku, productName = premium.name, quantity = 50, receivedQuantity = 0, unitCost = premium.costPrice))
-        purchaseOrderRepo.save(po3)
-
-        // PO-4: Draft
-        val po4 = PurchaseOrder(poNumber = "PO-2004", supplier = partsDirect, status = PurchaseOrderStatus.DRAFT, orderDate = LocalDate.now(), warehouseId = mainWh.id)
-        po4.lineItems.add(PurchaseOrderLine(order = po4, productId = widget.id, productSku = widget.sku, productName = widget.name, quantity = 100, receivedQuantity = 0, unitCost = widget.costPrice))
-        purchaseOrderRepo.save(po4)
-
-        // --- Shipments ---
-
-        // SHP-1: Delivered (for SO-1)
-        shipmentRepo.save(Shipment(shipmentNumber = "SHP-3001", salesOrderId = so1.id, warehouseId = mainWh.id, carrier = fedex, trackingNumber = "FX123456789", status = ShipmentStatus.DELIVERED, shippedAt = Instant.now().minusSeconds(86400 * 12), deliveredAt = Instant.now().minusSeconds(86400 * 10)))
-
-        // SHP-2: In transit (for SO-2)
-        shipmentRepo.save(Shipment(shipmentNumber = "SHP-3002", salesOrderId = so2.id, warehouseId = mainWh.id, carrier = ups, trackingNumber = "1Z999AA10123456784", status = ShipmentStatus.IN_TRANSIT, shippedAt = Instant.now().minusSeconds(86400 * 3), estimatedDelivery = LocalDate.now().plusDays(2)))
-
-        // SHP-3: Packed, ready to ship (for SO-3)
-        shipmentRepo.save(Shipment(shipmentNumber = "SHP-3003", salesOrderId = so3.id, warehouseId = mainWh.id, carrier = fedex, status = ShipmentStatus.PACKED, estimatedDelivery = LocalDate.now().plusDays(4)))
-
-        // SHP-4: Pending (for SO-3, second shipment)
-        shipmentRepo.save(Shipment(shipmentNumber = "SHP-3004", salesOrderId = so3.id, warehouseId = eastWh.id, status = ShipmentStatus.PENDING))
-
-        println("✓ Seed data loaded")
+        println("✓ Seed data loaded: ${companies.size} companies, ${contacts.size} contacts, ${products.size} products, 25 sales orders, 15 POs, 20 shipments")
     }
 }
